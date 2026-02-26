@@ -74,10 +74,14 @@ function estimateTraffic(displayLink) {
 // ─────────────────────────────────────────────────────────
 function buildSearchQueries(brand) {
   return [
-    `best ${brand} review`,
-    `"${brand}" recommended buying guide`,
-    `${brand} top products ranked`,
-    `${brand} editorial review site:forbes.com OR site:businessinsider.com OR site:wirecutter.com OR site:goodhousekeeping.com OR site:reviewed.com`,
+    // Finds ALL articles mentioning the brand, including roundups where it appears among other products
+    `"${brand}"`,
+    // Best-of and review articles specifically about the brand
+    `best ${brand} OR "${brand}" review OR "${brand}" recommended`,
+    // High-authority editorial sites that mention the brand
+    `"${brand}" site:wirecutter.com OR site:goodhousekeeping.com OR site:forbes.com OR site:businessinsider.com OR site:nytimes.com OR site:cnet.com OR site:travelandleisure.com OR site:realsimple.com OR site:thespruce.com OR site:reviewed.com`,
+    // Ranked lists and buying guides
+    `${brand} top products ranked OR buying guide`,
   ];
 }
 
@@ -117,7 +121,7 @@ app.get("/api/articles", async (req, res) => {
     const queries = buildSearchQueries(brand);
     const allResults = [];
     const seenUrls = new Set();
-    for (const query of queries.slice(0, 2)) {
+    for (const query of queries.slice(0, 3)) {
       const items = await searchGoogle(query, apiKey);
       for (const item of items) {
         if (seenUrls.has(item.link)) continue;
