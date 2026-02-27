@@ -99,6 +99,41 @@ function generateTrend(baseVolume) {
 }
 
 // ─────────────────────────────────────────────────────────
+// DATAFORSEO KEYWORD VOLUMES
+// ─────────────────────────────────────────────────────────
+async function getKeywordVolumes(keywords, login, password) {
+  if (!login || !password || !keywords.length) return {};
+  try {
+    const auth = Buffer.from(`${login}:${password}`).toString("base64");
+    const res = await fetch("https://api.dataforseo.com/v3/keywords_data/google_ads/search_volume/live", {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${auth}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([{
+        keywords,
+        language_name: "English",
+        location_name: "United States",
+      }]),
+    });
+    if (!res.ok) throw new Error(`DataForSEO ${res.status}`);
+    const data = await res.json();
+    const volumeMap = {};
+    for (const item of (data.tasks?.[0]?.result || [])) {
+      if (item.keyword && item.search_volume != null) {
+        volumeMap[item.keyword.toLowerCase()] = item.search_volume;
+      }
+    }
+    return volumeMap;
+  } catch (err) {
+    console.warn("DataForSEO error:", err.message);
+    return {};
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────
 // SERPAPI SEARCH
 // ─────────────────────────────────────────────────────────
 async function searchGoogle(query, apiKey) {
@@ -263,7 +298,10 @@ app.get("/api/prompts", async (req, res) => {
     }
     const promptList = [...promptSet].slice(0, 10);
 
-    // Step 2: query ChatGPT for all prompts in parallel
+    // Fetch real keyword volumes from DataForSEO (single batched request)
+    const volumeMap = await getKeywordVolumes(promptList, process.env.DATAFORSEO_LOGIN, process.env.DATAFORSEO_PASSWORD);
+
+        // Step 2: query ChatGPT for all prompts in parallel
     const settled = await Promise.allSettled(
       promptList.map(async (prompt, i) => {
         const engines = {};
@@ -278,7 +316,7 @@ app.get("/api/prompts", async (req, res) => {
         const mentioned = Object.values(engines).some(e => e.mentioned);
         const position = Object.values(engines).find(e => e.position != null)?.position || null;
         const mentioningEngines = Object.entries(engines).filter(([, v]) => v.mentioned).map(([k]) => k);
-        const volume = estimatePromptVolume(prompt, brand);
+        const volume = volumeMap[prompt.toLowerCase()] ?? estimatePromptVolume(prompt, brand);
         return {
           id: i + 1,
           prompt,
@@ -308,7 +346,7 @@ app.get("/api/prompts", async (req, res) => {
 // HEALTH CHECK
 // ─────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", search: !!process.env.SERPAPI_KEY, openai: !!process.env.OPENAI_API_KEY });
+  res.json({ status: "ok", search: !!process.env.SERPAPI_KEY, openai: !!process.env.OPENAI_API_KEY, dataforseo: !!process.env.DATAFORSEO_LOGIN });
 });
 
 app.listen(PORT, () => {
