@@ -339,6 +339,20 @@ app.get("/api/prompts", async (req, res) => {
   }
 });
 
+// ──────────────────────────────────────────────────────
+// TEST OPENAI ENDPOINT (diagnostic)
+// ──────────────────────────────────────────────────────
+app.get("/api/test-openai", async (req, res) => {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.json({ ok: false, error: "OPENAI_API_KEY not set" });
+    try {
+          const result = await queryOpenAI("Say hello in one word.", apiKey);
+          res.json({ ok: true, response: result });
+    } catch (err) {
+          res.json({ ok: false, error: err.message });
+    }
+});
+
 // ─────────────────────────────────────────────────────────
 // HEALTH CHECK
 // ─────────────────────────────────────────────────────────
