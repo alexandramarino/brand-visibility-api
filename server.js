@@ -301,40 +301,37 @@ app.get("/api/prompts", async (req, res) => {
     // Fetch real keyword volumes from DataForSEO (single batched request)
     const volumeMap = await getKeywordVolumes(promptList, process.env.DATAFORSEO_LOGIN, process.env.DATAFORSEO_PASSWORD);
 
-        // Step 2: query ChatGPT for all prompts in parallel
-    const settled = await Promise.allSettled(
-      promptList.map(async (prompt, i) => {
-        const engines = {};
-        if (openAiKey) {
-          try {
-            const reply = await queryOpenAI(prompt, openAiKey);
-            engines["ChatGPT"] = detectBrandInResponse(brand, reply);
-          } catch (e) {
-            console.warn("OpenAI skip:", e.message);
-          }
-        }
-        const mentioned = Object.values(engines).some(e => e.mentioned);
-        const position = Object.values(engines).find(e => e.position != null)?.position || null;
-        const mentioningEngines = Object.entries(engines).filter(([, v]) => v.mentioned).map(([k]) => k);
-        const volume = volumeMap[prompt.toLowerCase()] ?? estimatePromptVolume(prompt, brand);
-        return {
-          id: i + 1,
-          prompt,
-          monthlyVolume: volume,
-          mentioned,
-          position,
-          engines: mentioningEngines,
-          trend: generateTrend(volume),
-        };
-      })
-    );
+                // Step 2: query ChatGPT for each prompt sequentially (avoids rate limiting)
+            const promptResults = [];
+            for (const [i, prompt] of promptList.entries()) {
+                        const engines = {};
+                        if (openAiKey) {
+                                      try {
+                                                      const reply = await queryOpenAI(prompt, openAiKey);
+                                                      engines["ChatGPT"] = detectBrandInResponse(brand, reply);
+                                      } catch (e) {
+                                                      console.error("OpenAI error:", e.message);
+                                      }
+                        }
+                        const mentioned = Object.values(engines).some(e => e.mentioned);
+                        const position = Object.values(engines).find(e => e.position != null)?.position || null;
+                        const mentioningEngines = Object.entries(engines).filter(([, v]) => v.mentioned).map(([k]) => k);
+                        const volume = volumeMap[prompt.toLowerCase()] ?? estimatePromptVolume(prompt, brand);
+                        promptResults.push({
+                                      id: i + 1,
+                                      prompt,
+                                      monthlyVolume: volume,
+                                      mentioned,
+                                      position,
+                                      engines: mentioningEngines,
+                                      trend: generateTrend(volume),
+                        });
+            }
 
-    const prompts = settled
-      .filter(r => r.status === "fulfilled")
-      .map(r => r.value)
-      .sort((a, b) => b.monthlyVolume - a.monthlyVolume)
-      .map((p, i) => ({ ...p, id: i + 1 }));
-
+            const prompts = promptResults
+              .sort((a, b) => b.monthlyVolume - a.monthlyVolume)
+              .map((p, i) => ({ ...p, id: i + 1 }));
+    
     res.json({ prompts, brand, total: prompts.length });
   } catch (err) {
     console.error("Prompts error:", err.message);
