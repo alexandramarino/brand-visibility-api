@@ -132,6 +132,38 @@ async function getKeywordVolumes(keywords, login, password) {
   }
 }
 
+// --------------------------------------------------
+// DATAFORSEO ARTICLE-LEVEL TRAFFIC
+// --------------------------------------------------
+async function getArticleTrafficMap(urls, login, password) {
+  if (!login || !password || !urls.length) return {};
+  try {
+    const auth = Buffer.from(`${login}:${password}`).toString("base64");
+    const res = await fetch("https://api.dataforseo.com/v3/dataforseo_labs/google/bulk_traffic_estimation/live", {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${auth}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify([{
+        targets: urls,
+        language_code: "en",
+        location_code: 2840,
+      }]),
+    });
+    if (!res.ok) throw new Error(`DataForSEO ${res.status}`);
+    const data = await res.json();
+    const trafficMap = {};
+    for (const item of (data.tasks?.[0]?.result?.[0]?.items || [])) {
+      const etv = item?.metrics?.organic?.etv;
+      if (item.target && etv != null) trafficMap[item.target] = Math.round(etv);
+    }
+    return trafficMap;
+  } catch (err) {
+    console.warn("DataForSEO traffic error:", err.message);
+    return {};
+  }
+}
 
 // ─────────────────────────────────────────────────────────
 // SERPAPI SEARCH
@@ -251,6 +283,16 @@ app.get("/api/articles", async (req, res) => {
       }
     }
     allResults.sort((a, b) => b.monthlyTraffic - a.monthlyTraffic);
+
+    // Enrich with article-level traffic from DataForSEO (replaces publisher estimates)
+    const articleUrls = allResults.map(a => a.url);
+    const trafficMap = await getArticleTrafficMap(articleUrls, process.env.DATAFORSEO_LOGIN, process.env.DATAFORSEO_PASSWORD);
+    if (Object.keys(trafficMap).length > 0) {
+      for (const article of allResults) {
+        if (trafficMap[article.url] != null) article.monthlyTraffic = trafficMap[article.url];
+      }
+      allResults.sort((a, b) => b.monthlyTraffic - a.monthlyTraffic);
+    }
     res.json({ articles: allResults, brand, total: allResults.length });
   } catch (err) {
     console.error("Articles error:", err.message);
