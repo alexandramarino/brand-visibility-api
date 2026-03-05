@@ -62,6 +62,33 @@ const DOMAIN_TRAFFIC_MAP = {
   "parents.com": 7000000, "babycenter.com": 6000000, "whattoexpect.com": 5000000,
 };
 
+// --------------------------------------------------
+// NON-EDITORIAL DOMAIN FILTER
+// --------------------------------------------------
+const NON_EDITORIAL_DOMAINS = new Set([
+  // Retailers & e-commerce
+  'amazon.com', 'amazon.co.uk', 'amazon.ca', 'amazon.com.au',
+  'target.com', 'walmart.com', 'ebay.com', 'etsy.com', 'wayfair.com',
+  'sephora.com', 'ulta.com', 'nordstrom.com', 'macys.com',
+  'bloomingdales.com', 'kohls.com', 'tjmaxx.com', 'costco.com',
+  'cvs.com', 'walgreens.com', 'dermstore.com', 'lookfantastic.com',
+  // Social media & video
+  'instagram.com', 'facebook.com', 'twitter.com', 'x.com',
+  'tiktok.com', 'youtube.com', 'pinterest.com', 'linkedin.com',
+  'snapchat.com', 'threads.net',
+]);
+
+function isEditorialDomain(displayLink, brand) {
+  const domain = displayLink.replace(/^www\./, '').toLowerCase();
+  // Block known non-editorial domains
+  if (NON_EDITORIAL_DOMAINS.has(domain)) return false;
+  // Block the brand's own website (e.g. firstaidbeauty.com for "First Aid Beauty")
+  const brandSlug = brand.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const domainSlug = domain.replace(/[^a-z0-9.]/g, '');
+  if (domainSlug.startsWith(brandSlug) || domainSlug.includes(brandSlug + '.com')) return false;
+  return true;
+}
+
 function estimateTraffic(displayLink) {
   const domain = displayLink.replace("www.", "").toLowerCase();
   if (DOMAIN_TRAFFIC_MAP[domain]) return Math.floor(DOMAIN_TRAFFIC_MAP[domain] * (0.001 + Math.random() * 0.018));
@@ -261,6 +288,7 @@ app.get("/api/articles", async (req, res) => {
       for (const item of results) {
         if (seenUrls.has(item.link)) continue;
         seenUrls.add(item.link);
+      if (!isEditorialDomain(item.displayLink, brand)) continue;
         const type = classifyArticleType(item.title, item.snippet || "", item.link);
         const { mentioned, position } = detectBrandMention(brand, item.title, item.snippet || "");
         const traffic = estimateTraffic(item.displayLink);
