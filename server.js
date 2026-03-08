@@ -162,6 +162,126 @@ async function getKeywordVolumes(keywords, login, password) {
 // --------------------------------------------------
 // DATAFORSEO ARTICLE-LEVEL TRAFFIC
 // --------------------------------------------------
+// CATEGORY COVERAGE ENDPOINT
+// --------------------------------------------------
+app.get("/api/category-coverage", async (req, res) => {
+  const { brand } = req.query;
+  const serpApiKey = process.env.SERPAPI_KEY;
+  const openAiKey = process.env.OPENAI_API_KEY;
+  if (!brand) return res.status(400).json({ error: "brand required" });
+  if (!openAiKey) return res.status(500).json({ error: "OpenAI not configured" });
+
+  try {
+    // Step 1: AI identifies product categories + top search terms
+    const categoryPrompt = `You are a market research expert. For the brand "${brand}", identify the top 4-5 product categories they sell products in. For each category, list the top 3 Google search queries that consumers actually use when researching products in that category (e.g. "best breast pumps 2026").
+
+Return ONLY valid JSON, no other text:
+{
+  "categories": [
+    {
+      "name": "Category Name",
+      "description": "One sentence describing this product category",
+      "searchTerms": ["search term 1", "search term 2", "search term 3"]
+    }
+  ]
+}`;
+
+    const aiRes = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${openAiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: categoryPrompt }], max_tokens: 1000 }),
+    });
+    if (!aiRes.ok) throw new Error(`OpenAI error: ${aiRes.status}`);
+    const aiData = await aiRes.json();
+    const aiText = aiData.choices?.[0]?.message?.content || "";
+
+    let parsed;
+    try {
+      const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      throw new Error("Failed to parse AI category response");
+    }
+
+    // Step 2: Run all SerpAPI searches in parallel
+    const cats = (parsed.categories || []).slice(0, 5);
+    const searchJobs = [];
+    for (const cat of cats) {
+      for (const term of (cat.searchTerms || []).slice(0, 3)) {
+        searchJobs.push({ catName: cat.name, term });
+      }
+    }
+
+    const searchResults = await Promise.allSettled(
+      searchJobs.map(({ term }) => serpApiKey ? searchGoogle(term, serpApiKey) : Promise.resolve({ results: [] }))
+    );
+
+    // Build article map: catName -> term -> articles[]
+    const articleMap = {};
+    for (let i = 0; i < searchJobs.length; i++) {
+      const { catName, term } = searchJobs[i];
+      if (!articleMap[catName]) articleMap[catName] = {};
+      const r = searchResults[i];
+      const items = r.status === "fulfilled" ? (r.value.results || []) : [];
+      const seen = new Set();
+      const articles = [];
+      for (const item of items) {
+        if (seen.has(item.link)) continue;
+        if (!isEditorialDomain(item.displayLink, brand)) continue;
+        seen.add(item.link);
+        const { mentioned, position } = detectBrandMention(brand, item.title, item.snippet || "");
+        articles.push({
+          id: articles.length + 1,
+          title: item.title,
+          publisher: item.displayLink.replace(/^www\./, ""),
+          domain: item.displayLink.replace(/^www\./, ""),
+          url: item.link,
+          type: classifyArticleType(item.title, item.snippet || "", item.link),
+          monthlyTraffic: estimateTraffic(item.displayLink),
+          brandMentioned: mentioned,
+          mentionPosition: position,
+          snippet: item.snippet || "",
+          publishDate: item.pagemap?.metatags?.[0]?.["article:published_time"]
+            ? new Date(item.pagemap.metatags[0]["article:published_time"]).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+            : "Recent",
+          sponsored: false,
+          searchTerm: term,
+        });
+      }
+      articleMap[catName][term] = articles;
+    }
+
+    // Step 3: Enrich with article-level traffic
+    const allArticles = Object.values(articleMap).flatMap(t => Object.values(t).flat());
+    const allUrls = allArticles.map(a => a.url);
+    const trafficMap = await getArticleTrafficMap(allUrls, process.env.DATAFORSEO_LOGIN, process.env.DATAFORSEO_PASSWORD);
+    if (Object.keys(trafficMap).length > 0) {
+      for (const a of allArticles) {
+        if (trafficMap[a.url] != null) a.monthlyTraffic = trafficMap[a.url];
+      }
+    }
+
+    // Assemble final response
+    const categories = cats.map(cat => ({
+      name: cat.name,
+      description: cat.description || "",
+      searchTerms: (cat.searchTerms || []).slice(0, 3).map(term => ({
+        term,
+        articles: articleMap[cat.name]?.[term] || [],
+      })),
+    }));
+
+    const total = allArticles.length;
+    res.json({ brand, categories, total });
+
+  } catch (err) {
+    console.error("Category coverage error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// --------------------------------------------------
 async function getArticleTrafficMap(urls, login, password) {
   if (!login || !password || !urls.length) return {};
   try {
