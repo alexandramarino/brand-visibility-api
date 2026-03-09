@@ -173,7 +173,8 @@ app.get("/api/category-coverage", async (req, res) => {
 
   try {
     // Step 1: AI identifies product categories + top search terms
-    const categoryPrompt = `You are a market research expert. For the brand "${brand}", identify the top 4-5 product categories they sell products in. For each category, list the top 3 Google search queries that consumers actually use when researching products in that category (e.g. "best breast pumps 2026").
+    const currentYear = new Date().getFullYear();
+    const categoryPrompt = `You are a market research expert. The current year is ${currentYear}. For the brand "${brand}", identify the top 4-5 product categories they sell products in. For each category, list the top 3 Google search queries that consumers actually use when researching products in that category in ${currentYear}. Always use ${currentYear} in year-specific search terms (e.g. "best breast pumps ${currentYear}"). Never use years prior to ${currentYear}.
 
 Return ONLY valid JSON, no other text:
 {
