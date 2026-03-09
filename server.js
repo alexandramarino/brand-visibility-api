@@ -176,8 +176,16 @@ app.get("/api/category-coverage", async (req, res) => {
     // Search Google for brand products to get accurate category context
     let websiteContext = "";
     try {
-      const productSearch = await searchGoogle(brand + " products", serpApiKey);
-      const snippets = (productSearch.results || []).slice(0, 8).map(r =>
+      // Run two searches: brand name (finds official site/Amazon) + brand review (finds product lists)
+      const [brandSearch, reviewSearch] = await Promise.all([
+        searchGoogle(brand, serpApiKey),
+        searchGoogle(brand + " review", serpApiKey)
+      ]);
+      const allResults = [
+        ...(brandSearch.results || []).slice(0, 5),
+        ...(reviewSearch.results || []).slice(0, 5)
+      ];
+      const snippets = allResults.map(r =>
         (r.title || "") + ": " + (r.snippet || "")
       ).join("\n");
       if (snippets) websiteContext = snippets;
