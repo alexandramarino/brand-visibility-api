@@ -173,8 +173,31 @@ app.get("/api/category-coverage", async (req, res) => {
 
   try {
     // Step 1: AI identifies product categories + top search terms
+    // Fetch brand website for accurate product category detection
+    const brandSlug = brand.toLowerCase().replace(/[^a-z0-9]/g, "");
+    let websiteContext = "";
+    try {
+      const siteUrl = "https://www." + brandSlug + ".com";
+      const siteRes = await fetch(siteUrl, {
+        signal: AbortSignal.timeout(6000),
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; BrandResearch/1.0)" }
+      });
+      if (siteRes.ok) {
+        const html = await siteRes.text();
+        websiteContext = html
+          .replace(/<script[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .substring(0, 4000);
+      }
+    } catch(e) {
+      console.log("Website fetch failed for", brand, e.message);
+    }
+
     const currentYear = new Date().getFullYear();
-    const categoryPrompt = `You are a market research expert. The current year is ${currentYear}. For the brand "${brand}", identify the top 4-5 product categories they sell products in. For each category, list the top 3 Google search queries that consumers actually use when researching products in that category in ${currentYear}. Always use ${currentYear} in year-specific search terms (e.g. "best breast pumps ${currentYear}"). Never use years prior to ${currentYear}.
+    const categoryPrompt = `You are a market research expert. The current year is ${currentYear}. For the brand "${brand}", identify the top 4-5 product categories they actually sell products in.${websiteContext ? "\n\nI have fetched live content from the brand's website to help you identify their real products. Use this to accurately determine their actual product categories:\n" + websiteContext : ""} For each category, list the top 3 Google search queries that consumers actually use when researching products in that category in ${currentYear}. Always use ${currentYear} in year-specific search terms (e.g. "best breast pumps ${currentYear}"). Never use years prior to ${currentYear}.
 
 Return ONLY valid JSON, no other text:
 {
