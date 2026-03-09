@@ -293,7 +293,7 @@ Return ONLY valid JSON, no other text:
       description: cat.description || "",
       searchTerms: (cat.searchTerms || []).slice(0, 3).map(term => ({
         term,
-        monthlyVolume: volumeMap[term] || null,
+        monthlyVolume: volumeMap[term.toLowerCase()] || null,
         articles: articleMap[cat.name]?.[term] || [],
       })),
     }));
