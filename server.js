@@ -176,14 +176,15 @@ app.get("/api/category-coverage", async (req, res) => {
     // Search Google for brand products to get accurate category context
     let websiteContext = "";
     try {
-      // Run two searches: brand name (finds official site/Amazon) + brand review (finds product lists)
-      const [brandSearch, reviewSearch] = await Promise.all([
+      // Run two searches: brand name alone + brand on Amazon for product-specific results
+      const [brandSearch, amazonSearch] = await Promise.all([
         searchGoogle(brand, serpApiKey),
-        searchGoogle(brand + " review", serpApiKey)
+        searchGoogle(brand + " amazon", serpApiKey)
       ]);
+      // Only use top 3 from each to avoid pulling in generic category pages
       const allResults = [
-        ...(brandSearch.results || []).slice(0, 5),
-        ...(reviewSearch.results || []).slice(0, 5)
+        ...(brandSearch.results || []).slice(0, 3),
+        ...(amazonSearch.results || []).slice(0, 3)
       ];
       const snippets = allResults.map(r =>
         (r.title || "") + ": " + (r.snippet || "")
@@ -194,7 +195,7 @@ app.get("/api/category-coverage", async (req, res) => {
     }
 
     const currentYear = new Date().getFullYear();
-    const categoryPrompt = `You are a market research expert. The current year is ${currentYear}. For the brand "${brand}", identify the top 4-5 specific product categories they actually sell.${websiteContext ? "\n\nHere are Google search results for \"" + brand + " products\" — use these to determine their REAL product categories (ignore generic baby product categories that don't appear in these results):\n" + websiteContext : ""} For each category, list the top 3 Google search queries that consumers actually use when researching products in that category in ${currentYear}. Always use ${currentYear} in year-specific search terms (e.g. "best breast pumps ${currentYear}"). Never use years prior to ${currentYear}.
+    const categoryPrompt = `You are a market research expert. The current year is ${currentYear}. For the brand "${brand}", identify ONLY the specific product categories that ${brand} actually manufactures and sells — based strictly on what appears in the search results below. Do NOT include generic baby product categories (like car seats, clothing, diapers) unless the search results explicitly show ${brand} selling that specific product type.${websiteContext ? "\n\nHere are Google search results for \"" + brand + " products\" — use these to determine their REAL product categories (ignore generic baby product categories that don't appear in these results):\n" + websiteContext : ""} For each category, list the top 3 Google search queries that consumers actually use when researching products in that category in ${currentYear}. Always use ${currentYear} in year-specific search terms (e.g. "best breast pumps ${currentYear}"). Never use years prior to ${currentYear}.
 
 Return ONLY valid JSON, no other text:
 {
