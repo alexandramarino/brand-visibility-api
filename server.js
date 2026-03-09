@@ -173,31 +173,20 @@ app.get("/api/category-coverage", async (req, res) => {
 
   try {
     // Step 1: AI identifies product categories + top search terms
-    // Fetch brand website for accurate product category detection
-    const brandSlug = brand.toLowerCase().replace(/[^a-z0-9]/g, "");
+    // Search Google for brand products to get accurate category context
     let websiteContext = "";
     try {
-      const siteUrl = "https://www." + brandSlug + ".com";
-      const siteRes = await fetch(siteUrl, {
-        signal: AbortSignal.timeout(6000),
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; BrandResearch/1.0)" }
-      });
-      if (siteRes.ok) {
-        const html = await siteRes.text();
-        websiteContext = html
-          .replace(/<script[\s\S]*?<\/script>/gi, "")
-          .replace(/<style[\s\S]*?<\/style>/gi, "")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .substring(0, 4000);
-      }
+      const productSearch = await searchGoogle(brand + " products", serpApiKey);
+      const snippets = (productSearch.results || []).slice(0, 8).map(r =>
+        (r.title || "") + ": " + (r.snippet || "")
+      ).join("\n");
+      if (snippets) websiteContext = snippets;
     } catch(e) {
-      console.log("Website fetch failed for", brand, e.message);
+      console.log("Product search failed for", brand, e.message);
     }
 
     const currentYear = new Date().getFullYear();
-    const categoryPrompt = `You are a market research expert. The current year is ${currentYear}. For the brand "${brand}", identify the top 4-5 product categories they actually sell products in.${websiteContext ? "\n\nI have fetched live content from the brand's website to help you identify their real products. Use this to accurately determine their actual product categories:\n" + websiteContext : ""} For each category, list the top 3 Google search queries that consumers actually use when researching products in that category in ${currentYear}. Always use ${currentYear} in year-specific search terms (e.g. "best breast pumps ${currentYear}"). Never use years prior to ${currentYear}.
+    const categoryPrompt = `You are a market research expert. The current year is ${currentYear}. For the brand "${brand}", identify the top 4-5 specific product categories they actually sell.${websiteContext ? "\n\nHere are Google search results for \"" + brand + " products\" — use these to determine their REAL product categories (ignore generic baby product categories that don't appear in these results):\n" + websiteContext : ""} For each category, list the top 3 Google search queries that consumers actually use when researching products in that category in ${currentYear}. Always use ${currentYear} in year-specific search terms (e.g. "best breast pumps ${currentYear}"). Never use years prior to ${currentYear}.
 
 Return ONLY valid JSON, no other text:
 {
