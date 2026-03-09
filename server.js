@@ -283,12 +283,17 @@ Return ONLY valid JSON, no other text:
       }
     }
 
+    // Fetch monthly search volumes for all search terms
+    const allTerms = cats.flatMap(cat => (cat.searchTerms || []).slice(0, 3));
+    const volumeMap = await getKeywordVolumes(allTerms, process.env.DATAFORSEO_LOGIN, process.env.DATAFORSEO_PASSWORD).catch(() => ({}));
+
     // Assemble final response
     const categories = cats.map(cat => ({
       name: cat.name,
       description: cat.description || "",
       searchTerms: (cat.searchTerms || []).slice(0, 3).map(term => ({
         term,
+        monthlyVolume: volumeMap[term] || null,
         articles: articleMap[cat.name]?.[term] || [],
       })),
     }));
